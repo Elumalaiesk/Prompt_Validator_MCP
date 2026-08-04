@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}Skills{% endblock %}
+{% block content %}
+<div class="row" style="justify-content:space-between; align-items:flex-end;">
+  <h1>Skills</h1>
+  <button class="btn" onclick="openSkill()">+ Add skill</button>
+</div>
+<p class="sub" style="margin-top:-8px;">
+  Markdown skill documents served over MCP (<code>list_skills</code> / <code>get_skill</code>).
+  A skill is available to a user if it's <b>theirs</b> or marked <b>global</b>
+  (available to all users).
+</p>
+
+<div class="card">
+  <table>
+    <thead>
+      <tr><th>Name</th><th>Scope</th><th>Global</th><th>Enabled</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for s in skills %}
+      <tr data-id="{{ s.id }}">
+        <td><b>{{ s.name }}</b>{% if s.description %}<div class="sub">{{ s.description }}</div>{% endif %}</td>
+        <td>
+          {% if s.is_global %}<span class="pill global">global</span>
+          {% elif s.owner %}<span class="pill">{{ s.owner }}</span>
+          {% else %}<span class="pill">unassigned</span>{% endif %}
+        </td>
+        <td>
+          <label class="tog"><input type="checkbox" class="t-global" {% if s.is_global %}checked{% endif %} />
+            <span class="slider"></span></label>
+        </td>
+        <td>
+          <label class="tog"><input type="checkbox" class="t-enabled" {% if s.enabled %}checked{% endif %} />
+            <span class="slider"></span></label>
+        </td>
+        <td style="text-align:right;">
+          <button class="btn ghost sm" onclick="openEdit({{ s.id }})">Edit</button>
+          <button class="btn danger sm" onclick="delSkill({{ s.id }})">Delete</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if not skills %}<div class="empty">No skills yet. Add one to get started.</div>{% endif %}
+</div>
+
+<div class="modal-bg" id="sModal">
+  <div class="modal">
+    <h3 id="sModalTitle">New skill</h3>
+    <label>Name</label><input id="s_name" placeholder="incident-triage" />
+    <label>Description (shown in list_skills discovery)</label>
+    <input id="s_desc" placeholder="Triage an incoming incident report" />
+    <label>Body (Markdown — full instructions returned by get_skill)</label>
+    <textarea id="s_body" placeholder="## Steps&#10;1. ...&#10;2. ..." style="min-height:220px;"></textarea>
+
+    <div class="card" id="scopeWrap" style="margin-top:16px; background:rgba(160,107,255,.10); border-color:rgba(160,107,255,.4);">
+      <label class="row" style="margin:0; cursor:pointer;">
+        <span class="tog"><input type="checkbox" id="s_global" /><span class="slider"></span></span>
+        <span style="color:var(--txt);"><b>Global</b> — serve this skill to <b>all</b> users</span>
+      </label>
+    </div>
+
+    <div id="sOwnerWrap">
+      <label>Owner (user) — required unless global</label>
+      <select id="s_owner">
+        <option value="">— select user —</option>
+        {% for u in users %}<option value="{{ u.username }}">{{ u.username }} ({{ u.role }})</option>{% endfor %}
+      </select>
+    </div>
+
+    <div class="row" style="justify-content:flex-end; margin-top:20px;">
+      <button class="btn ghost" onclick="closeSkill()">Cancel</button>
+      <button class="btn" id="s_submit" onclick="createSkill()">Create skill</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const sm = document.getElementById('sModal');
+  const sGlobalCb = document.getElementById('s_global');
+  const sOwnerWrap = document.getElementById('sOwnerWrap');
+  const scopeWrap = document.getElementById('scopeWrap');
+  let editId = null;
+
+  sGlobalCb.addEventListener('change', () => {
+    sOwnerWrap.style.opacity = sGlobalCb.checked ? '.4' : '1';
+    document.getElementById('s_owner').disabled = sGlobalCb.checked;
+  });
+
+  function openSkill() {
+    editId = null;
+    document.getElementById('sModalTitle').textContent = 'New skill';
+    document.getElementById('s_submit').textContent = 'Create skill';
+    document.getElementById('s_name').value = '';
+    document.getElementById('s_name').disabled = false;
+    document.getElementById('s_desc').value = '';
+    document.getElementById('s_body').value = '';
+    sGlobalCb.checked = false;
+    sGlobalCb.dispatchEvent(new Event('change'));
+    document.getElementById('s_owner').value = '';
+    // Scope is set at creation; change it afterwards with the row toggles.
+    scopeWrap.style.display = '';
+    sOwnerWrap.style.display = '';
+    sm.classList.add('show');
+  }
+  function closeSkill() { sm.classList.remove('show'); }
+  sm.addEventListener('click', (e) => { if (e.target === sm) closeSkill(); });
+
+  const SKILLS = {{ skills | tojson }};
+  function openEdit(id) {
+    const s = SKILLS.find((x) => x.id === id);
+    if (!s) return;
+    editId = id;
+    document.getElementById('sModalTitle').textContent = 'Edit ' + s.name;
+    document.getElementById('s_submit').textContent = 'Save changes';
+    document.getElementById('s_name').value = s.name;
+    document.getElementById('s_name').disabled = true;
+    document.getElementById('s_desc').value = s.description || '';
+    document.getElementById('s_body').value = s.body || '';
+    scopeWrap.style.display = 'none';
+    sOwnerWrap.style.display = 'none';
+    sm.classList.add('show');
+  }
+
+  async function createSkill() {
+    const description = document.getElementById('s_desc').value.trim();
+    const body = document.getElementById('s_body').value;
+    try {
+      if (editId === null) {
+        const name = document.getElementById('s_name').value.trim();
+        const is_global = sGlobalCb.checked;
+        const owner = document.getElementById('s_owner').value;
+        if (!name) { toast('Name required', 'error'); return; }
+        if (!is_global && !owner) { toast('Pick an owner or mark it global', 'error'); return; }
+        await api('/api/skills', { name, description, body, owner, is_global });
+        toast('Created skill ' + name);
+      } else {
+        await api('/api/skills/update', { id: editId, description, body });
+        toast('Updated skill');
+      }
+      setTimeout(() => location.reload(), 700);
+    } catch (e) {}
+  }
+
+  async function delSkill(id) {
+    if (!confirm('Delete this skill?')) return;
+    try {
+      await api('/api/skills/delete', { id });
+      toast('Deleted skill');
+      setTimeout(() => location.reload(), 700);
+    } catch (e) {}
+  }
+
+  async function toggle(row, field, value) {
+    return api('/api/skills/toggle', { id: Number(row.dataset.id), field, value });
+  }
+  document.querySelectorAll('.t-global').forEach((cb) => cb.addEventListener('change', async () => {
+    const row = cb.closest('tr');
+    try { await toggle(row, 'is_global', cb.checked); toast('Updated global scope'); }
+    catch (e) { cb.checked = !cb.checked; }
+  }));
+  document.querySelectorAll('.t-enabled').forEach((cb) => cb.addEventListener('change', async () => {
+    const row = cb.closest('tr');
+    try { await toggle(row, 'enabled', cb.checked); toast(cb.checked ? 'Enabled' : 'Disabled'); }
+    catch (e) { cb.checked = !cb.checked; }
+  }));
+</script>
+{% endblock %}

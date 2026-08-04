@@ -1,0 +1,61 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: mpv
+      POSTGRES_PASSWORD: mpv
+      POSTGRES_DB: mpv
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mpv -d mpv"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Point the app at the compose Postgres service.
+      MPV_DATABASE_URL: postgresql+asyncpg://mpv:mpv@db:5432/mpv
+      MPV_HOST: 0.0.0.0
+      MPV_PORT: "8000"
+      MPV_RESOURCE_SERVER_URL: http://localhost:8000
+      # --- Auth: JWT issued + verified by this server ---
+      MPV_AUTH_MODE: jwt
+      MPV_JWT_ALGORITHM: RS256
+      MPV_JWT_ISSUER: mcp-prompt-validator
+      MPV_JWT_AUDIENCE: http://localhost:8000
+      MPV_JWT_KEYS_DIR: /app/keys
+      # Dev convenience: auto-generate + persist an RS256 keypair in the volume.
+      # For production, mount your own keys and set this to "false".
+      MPV_JWT_AUTO_GENERATE_KEYS: "true"
+      MPV_JWT_DEFAULT_TTL: "31536000"
+      # --- Admin dashboard (served at /admin on the same port) ---
+      MPV_DASHBOARD_ENABLED: "true"
+      MPV_DASHBOARD_PATH: /admin
+      # CHANGE THIS in production (signs the dashboard session cookie).
+      MPV_DASHBOARD_SECRET: ${MPV_DASHBOARD_SECRET:-change-me-in-production}
+      # Preloading downloads/initialises the ML models at boot (slower first start).
+      MPV_PRELOAD_MODELS: "true"
+      # Seed baseline roles + a bootstrap admin JWT on first boot.
+      MPV_SEED: "true"
+      # Optional: gated HF models (e.g. Llama Prompt Guard) need a token.
+      HF_TOKEN: ${HF_TOKEN:-}
+    ports:
+      - "8000:8000"
+    volumes:
+      # ML model weights cache — persist so restarts don't re-download.
+      - hf_cache:/root/.cache/huggingface
+      # JWT signing keys — persist so restarts don't invalidate issued tokens.
+      - jwt_keys:/app/keys
+
+volumes:
+  pgdata:
+  hf_cache:
+  jwt_keys:

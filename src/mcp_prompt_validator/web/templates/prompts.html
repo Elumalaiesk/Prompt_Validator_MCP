@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Prompts{% endblock %}
+{% block content %}
+<div class="row" style="justify-content:space-between; align-items:flex-end;">
+  <h1>Prompt templates</h1>
+  <button class="btn" onclick="openPrompt()">+ Add template</button>
+</div>
+<p class="sub" style="margin-top:-8px;">
+  Templates are Jinja2. A template is available to a user if it's <b>theirs</b> or
+  marked <b>global</b> (available to all users).
+</p>
+
+<div class="card">
+  <table>
+    <thead>
+      <tr><th>Name</th><th>Scope</th><th>Variables</th><th>Global</th><th>Enabled</th><th></th></tr>
+    </thead>
+    <tbody id="ptbody">
+      {% for p in prompts %}
+      <tr data-id="{{ p.id }}">
+        <td><b>{{ p.name }}</b>{% if p.description %}<div class="sub">{{ p.description }}</div>{% endif %}</td>
+        <td>
+          {% if p.is_global %}<span class="pill global">global</span>
+          {% elif p.owner %}<span class="pill">{{ p.owner }}</span>
+          {% else %}<span class="pill">unassigned</span>{% endif %}
+        </td>
+        <td>
+          {% for v in p.variables %}<span class="pill" style="margin:2px;">{{ v }}</span>{% endfor %}
+          {% if not p.variables %}<span class="sub">—</span>{% endif %}
+        </td>
+        <td>
+          <label class="tog"><input type="checkbox" class="t-global" {% if p.is_global %}checked{% endif %} />
+            <span class="slider"></span></label>
+        </td>
+        <td>
+          <label class="tog"><input type="checkbox" class="t-enabled" {% if p.enabled %}checked{% endif %} />
+            <span class="slider"></span></label>
+        </td>
+        <td style="text-align:right;"><button class="btn danger sm" onclick="delPrompt({{ p.id }})">Delete</button></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if not prompts %}<div class="empty">No prompt templates yet. Add one to get started.</div>{% endif %}
+</div>
+
+<div class="modal-bg" id="pModal">
+  <div class="modal">
+    <h3>New prompt template</h3>
+    <label>Name</label><input id="p_name" placeholder="summarise-ticket" />
+    <label>Description (optional)</label><input id="p_desc" placeholder="Summarise a support ticket" />
+    <label>Body (Jinja2 — use {{ '{{ variable }}' }} placeholders)</label>
+    <textarea id="p_body" placeholder="Summarise the following ticket for {{ '{{ audience }}' }}:&#10;&#10;{{ '{{ ticket_text }}' }}"></textarea>
+
+    <div class="card" style="margin-top:16px; background:rgba(160,107,255,.10); border-color:rgba(160,107,255,.4);">
+      <label class="row" style="margin:0; cursor:pointer;">
+        <span class="tog"><input type="checkbox" id="p_global" /><span class="slider"></span></span>
+        <span style="color:var(--txt);"><b>Global</b> — make this template available to <b>all</b> users</span>
+      </label>
+    </div>
+
+    <div id="ownerWrap">
+      <label>Owner (user) — required unless global</label>
+      <select id="p_owner">
+        <option value="">— select user —</option>
+        {% for u in users %}<option value="{{ u.username }}">{{ u.username }} ({{ u.role }})</option>{% endfor %}
+      </select>
+    </div>
+
+    <div class="row" style="justify-content:flex-end; margin-top:20px;">
+      <button class="btn ghost" onclick="closePrompt()">Cancel</button>
+      <button class="btn" onclick="createPrompt()">Create template</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const pm = document.getElementById('pModal');
+  const globalCb = document.getElementById('p_global');
+  const ownerWrap = document.getElementById('ownerWrap');
+  function openPrompt() { pm.classList.add('show'); }
+  function closePrompt() { pm.classList.remove('show'); }
+  pm.addEventListener('click', (e) => { if (e.target === pm) closePrompt(); });
+  globalCb.addEventListener('change', () => {
+    ownerWrap.style.opacity = globalCb.checked ? '.4' : '1';
+    document.getElementById('p_owner').disabled = globalCb.checked;
+  });
+
+  async function createPrompt() {
+    const name = document.getElementById('p_name').value.trim();
+    const body = document.getElementById('p_body').value;
+    const description = document.getElementById('p_desc').value.trim();
+    const is_global = globalCb.checked;
+    const owner = document.getElementById('p_owner').value;
+    if (!name) { toast('Name required', 'error'); return; }
+    if (!is_global && !owner) { toast('Pick an owner or mark it global', 'error'); return; }
+    try {
+      await api('/api/prompts', { name, body, description, owner, is_global });
+      toast('Created template ' + name);
+      setTimeout(() => location.reload(), 700);
+    } catch (e) {}
+  }
+
+  async function toggle(row, field, value) {
+    return api('/api/prompts/toggle', { id: Number(row.dataset.id), field, value });
+  }
+  document.querySelectorAll('.t-global').forEach((cb) => cb.addEventListener('change', async () => {
+    const row = cb.closest('tr');
+    try { await toggle(row, 'is_global', cb.checked); toast('Updated global scope'); }
+    catch (e) { cb.checked = !cb.checked; }
+  }));
+  document.querySelectorAll('.t-enabled').forEach((cb) => cb.addEventListener('change', async () => {
+    const row = cb.closest('tr');
+    try { await toggle(row, 'enabled', cb.checked); toast('Updated enabled state'); }
+    catch (e) { cb.checked = !cb.checked; }
+  }));
+
+  async function delPrompt(id) {
+    if (!confirm('Delete this template?')) return;
+    try {
+      await api('/api/prompts/delete', { id });
+      const row = document.querySelector('tr[data-id="' + id + '"]');
+      if (row) { row.classList.add('fade-out'); setTimeout(() => row.remove(), 360); }
+      toast('Deleted template');
+    } catch (e) {}
+  }
+</script>
+{% endblock %}

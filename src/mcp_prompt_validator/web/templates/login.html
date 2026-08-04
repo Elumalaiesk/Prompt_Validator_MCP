@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Sign in{% endblock %}
+{% block content %}
+<div style="max-width: 440px; margin: 8vh auto 0;">
+  <div class="card" style="text-align: center;">
+    <div class="brand" style="justify-content: center; font-size: 20px; margin-bottom: 6px;">
+      <span class="dot"></span> Prompt Validator
+    </div>
+    <p class="sub" style="margin-top: 0;">Admin dashboard — sign in with your <b>admin</b> username and password</p>
+
+    {% if error %}
+      <div class="toast error show" style="position: static; transform: none; margin: 14px 0; text-align: left;">
+        {{ error }}
+      </div>
+    {% endif %}
+
+    <form method="post" action="{{ base }}/login" style="text-align: left; margin-top: 14px;">
+      <label for="username">Username</label>
+      <input id="username" name="username" placeholder="admin" required autofocus />
+      <label for="password" style="margin-top: 10px;">Password</label>
+      <input id="password" name="password" type="password" placeholder="••••••••" required />
+      <button class="btn" type="submit" style="width: 100%; margin-top: 16px; justify-content: center;">
+        Sign in
+      </button>
+    </form>
+    <p class="sub" style="margin-bottom: 0; margin-top: 16px;">
+      Tip: the bootstrap admin password is printed by <code>mpv-seed</code> on first boot.
+    </p>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+{% block title %}Users{% endblock %}
+{% block content %}
+<div class="row" style="justify-content:space-between; align-items:flex-end;">
+  <h1>Users</h1>
+  <button class="btn" onclick="openUser()">+ Add user</button>
+</div>
+<p class="sub" style="margin-top:-8px;">
+  Two roles: <b>admin</b> (full access) and <b>std_user</b> (everything except admin tools).
+  A <b>required template</b> is enforced by the server on every validation call from
+  that user — the client cannot skip it by omitting <code>template_name</code>.
+</p>
+
+<div class="card">
+  <table>
+    <thead>
+      <tr><th>User</th><th>Role</th><th>Required template</th><th>Tokens</th><th>Active</th><th>Password</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td><b>{{ u.username }}</b>{% if u.email %}<div class="sub">{{ u.email }}</div>{% endif %}</td>
+        <td>{% if u.is_admin %}<span class="pill admin">{{ u.role }}</span>{% else %}<span class="pill">{{ u.role }}</span>{% endif %}</td>
+        <td>
+          <select class="t-required" data-username="{{ u.username }}" style="min-width:170px; font-size:12.5px;">
+            <option value="" {% if not u.required_template %}selected{% endif %}>— none (opt-in) —</option>
+            {% for t in templates %}
+            <option value="{{ t.name }}" {% if u.required_template == t.name %}selected{% endif %}>
+              {{ t.name }}{% if t.is_global %} (global){% elif t.owner %} ({{ t.owner }}){% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </td>
+        <td>{{ u.tokens }}</td>
+        <td>{% if u.is_active %}<span class="pill on">yes</span>{% else %}<span class="pill">no</span>{% endif %}</td>
+        <td>{% if u.has_password %}<span class="pill on">set</span>{% else %}<span class="pill">none</span>{% endif %}</td>
+        <td style="white-space:nowrap;">
+          <button class="btn ghost sm" onclick="openPassword('{{ u.username }}')">Set password</button>
+          <button class="btn ghost sm" onclick="issueToken('{{ u.username }}')">Issue token</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="modal-bg" id="userModal">
+  <div class="modal">
+    <h3>Add user</h3>
+    <p class="sub" style="margin-top:0;">Create a user bound to a role. Issue them a token with <code>mpv-issue-jwt</code>.</p>
+    <label>Username</label><input id="u_name" placeholder="jane" />
+    <label>Email (optional)</label><input id="u_email" placeholder="" />
+    <label>Role</label>
+    <select id="u_role">
+      {% for r in roles %}<option value="{{ r.name }}" {% if r.name == 'std_user' %}selected{% endif %}>{{ r.name }}</option>{% endfor %}
+    </select>
+    <label>Dashboard password (optional)</label>
+    <input id="u_password" type="password" placeholder="min 8 characters — leave blank for no dashboard login" />
+    <div class="row" style="justify-content:flex-end; margin-top:20px;">
+      <button class="btn ghost" onclick="closeUser()">Cancel</button>
+      <button class="btn" onclick="createUser()">Create</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="passwordModal">
+  <div class="modal">
+    <h3>Set password</h3>
+    <p class="sub" style="margin-top:0;">Set or reset the dashboard password for <b id="pw_username"></b>.</p>
+    <label>New password</label>
+    <input id="pw_password" type="password" placeholder="min 8 characters" />
+    <div class="row" style="justify-content:flex-end; margin-top:20px;">
+      <button class="btn ghost" onclick="closePassword()">Cancel</button>
+      <button class="btn" onclick="submitPassword()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="tokenModal">
+  <div class="modal">
+    <h3>MCP connection for <span id="tok_username"></span></h3>
+    <p class="sub" style="margin-top:0;">
+      Shown once — store it now. It will not be retrievable again from the dashboard.
+      Paste this block into your MCP client; the skills and prompt templates this
+      user can see are determined by the token inside it.
+    </p>
+    <label>Client configuration</label>
+    <textarea id="tok_json" readonly spellcheck="false"
+              style="min-height:190px; font-size:12px; line-height:1.5;"></textarea>
+    <div class="row" style="gap:8px; margin-top:10px;">
+      <button class="btn" onclick="copyJson()" style="flex-shrink:0;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:6px;">
+          <rect x="9" y="9" width="12" height="12" rx="2"></rect>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+        </svg>Copy JSON
+      </button>
+      <button class="btn ghost" onclick="copyToken()" style="flex-shrink:0;"
+              title="Copy just the credential, without the JSON wrapper">
+        Copy {% if auth_mode == 'jwt' %}JWT{% else %}token{% endif %} only
+      </button>
+    </div>
+    <div class="row" style="justify-content:flex-end; margin-top:20px;">
+      <button class="btn ghost" onclick="closeToken()">Done</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const um = document.getElementById('userModal');
+  function openUser() { um.classList.add('show'); }
+  function closeUser() { um.classList.remove('show'); }
+  um.addEventListener('click', (e) => { if (e.target === um) closeUser(); });
+
+  async function createUser() {
+    const username = document.getElementById('u_name').value.trim();
+    const role = document.getElementById('u_role').value;
+    const email = document.getElementById('u_email').value.trim();
+    const password = document.getElementById('u_password').value;
+    if (!username) { toast('Username required', 'error'); return; }
+    try {
+      await api('/api/users', { username, role, email, password });
+      toast('Created user ' + username);
+      setTimeout(() => location.reload(), 700);
+    } catch (e) {}
+  }
+
+  // Required template: enforced server-side, so a failed save must revert the
+  // dropdown rather than leave the UI claiming a policy that isn't in effect.
+  document.querySelectorAll('.t-required').forEach((sel) => {
+    sel.dataset.previous = sel.value;
+    sel.addEventListener('change', async () => {
+      const username = sel.dataset.username;
+      try {
+        await api('/api/users/template', { username, template: sel.value });
+        sel.dataset.previous = sel.value;
+        toast(sel.value ? username + ' must now use ' + sel.value : 'Cleared for ' + username);
+      } catch (e) {
+        sel.value = sel.dataset.previous;
+      }
+    });
+  });
+
+  const pm = document.getElementById('passwordModal');
+  let pwTarget = null;
+  function openPassword(username) {
+    pwTarget = username;
+    document.getElementById('pw_username').textContent = username;
+    document.getElementById('pw_password').value = '';
+    pm.classList.add('show');
+  }
+  function closePassword() { pm.classList.remove('show'); }
+  pm.addEventListener('click', (e) => { if (e.target === pm) closePassword(); });
+
+  async function submitPassword() {
+    const password = document.getElementById('pw_password').value;
+    if (!password) { toast('Password required', 'error'); return; }
+    try {
+      await api('/api/users/password', { username: pwTarget, password });
+      toast('Password updated for ' + pwTarget);
+      closePassword();
+      setTimeout(() => location.reload(), 700);
+    } catch (e) {}
+  }
+
+  const tm = document.getElementById('tokenModal');
+  let tokenIssued = false;
+  function closeToken() {
+    tm.classList.remove('show');
+    if (tokenIssued) location.reload(); // refresh the Tokens count column
+  }
+  tm.addEventListener('click', (e) => { if (e.target === tm) closeToken(); });
+
+  const MCP_URL = {{ mcp_url | tojson }};
+  let issuedToken = '';
+
+  async function issueToken(username) {
+    try {
+      const result = await api('/api/users/token', { username });
+      issuedToken = result.token;
+      document.getElementById('tok_username').textContent = username;
+      // The exact shape an MCP client expects, ready to paste as-is.
+      document.getElementById('tok_json').value = JSON.stringify({
+        type: 'http',
+        url: MCP_URL,
+        headers: { Authorization: 'Bearer ' + issuedToken },
+      }, null, 2);
+      tokenIssued = true;
+      tm.classList.add('show');
+    } catch (e) {}
+  }
+
+  async function copyText(text, label) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (e) {
+      // clipboard API needs a secure context; fall back to a scratch selection
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    toast(label + ' copied to clipboard');
+  }
+
+  function copyJson() { copyText(document.getElementById('tok_json').value, 'Connection JSON'); }
+  function copyToken() { copyText(issuedToken, 'Token'); }
+</script>
+{% endblock %}

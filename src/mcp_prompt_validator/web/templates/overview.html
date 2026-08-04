@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Overview{% endblock %}
+{% block content %}
+<h1>Overview</h1>
+<div class="grid cols-3">
+  <div class="card"><div class="sub">Users</div><div class="stat">{{ stats.users }}</div></div>
+  <div class="card"><div class="sub">Skills</div><div class="stat">{{ stats.skills }}</div></div>
+  <div class="card"><div class="sub">Global skills</div><div class="stat">{{ stats.global_skills }}</div></div>
+  <div class="card"><div class="sub">Prompt templates</div><div class="stat">{{ stats.prompts }}</div></div>
+  <div class="card"><div class="sub">Global prompts</div><div class="stat">{{ stats.global_prompts }}</div></div>
+</div>
+
+<h2>Manage</h2>
+<div class="grid cols-3">
+  <a class="card" href="{{ base }}/users" style="display:block;">
+    <h3>Users →</h3><div class="sub">Admin or std_user — inspect and create users.</div>
+  </a>
+  <a class="card" href="{{ base }}/prompts" style="display:block;">
+    <h3>Prompt templates →</h3><div class="sub">Create per-user or global prompt templates.</div>
+  </a>
+  <a class="card" href="{{ base }}/skills" style="display:block;">
+    <h3>Skills →</h3><div class="sub">Manage the Markdown skill documents served over MCP.</div>
+  </a>
+</div>
+{% endblock %}
