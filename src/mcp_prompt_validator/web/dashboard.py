@@ -226,6 +226,22 @@ def build_dashboard_routes(settings: Settings) -> list[Route]:
         await _audit(user, "dashboard.prompt_create", {"name": data.get("name")})
         return JSONResponse(result)
 
+    async def api_prompt_update(request):
+        user, err = await require_api(request)
+        if err:
+            return err
+        data = await request.json()
+        tid = data.get("id")
+        # Whitelisted, not passed through: `name`, `owner_user_id` and the scope
+        # flags have their own guarded paths, and a renamed template would break
+        # every user whose required_template points at it.
+        fields = {k: data[k] for k in ("description", "body") if k in data}
+        if not fields:
+            return JSONResponse({"ok": False, "error": "nothing to update"}, 400)
+        result = await prompt_service.update(tid, **fields)
+        await _audit(user, "dashboard.prompt_update", {"id": tid, "fields": sorted(fields)})
+        return JSONResponse(result)
+
     async def api_prompt_toggle(request):
         user, err = await require_api(request)
         if err:
@@ -322,6 +338,7 @@ def build_dashboard_routes(settings: Settings) -> list[Route]:
         Route(f"{base}/api/users/token", api_issue_token, methods=["POST"]),
         Route(f"{base}/api/users/template", api_set_required_template, methods=["POST"]),
         Route(f"{base}/api/prompts", api_prompt_create, methods=["POST"]),
+        Route(f"{base}/api/prompts/update", api_prompt_update, methods=["POST"]),
         Route(f"{base}/api/prompts/toggle", api_prompt_toggle, methods=["POST"]),
         Route(f"{base}/api/prompts/delete", api_prompt_delete, methods=["POST"]),
         Route(f"{base}/api/skills", api_skill_create, methods=["POST"]),

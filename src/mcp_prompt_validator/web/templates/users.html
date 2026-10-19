@@ -11,10 +11,12 @@
   that user — the client cannot skip it by omitting <code>template_name</code>.
 </p>
 
+{% set show_password_col = users | selectattr('is_admin') | list %}
+
 <div class="card">
   <table>
     <thead>
-      <tr><th>User</th><th>Role</th><th>Required template</th><th>Tokens</th><th>Active</th><th>Password</th><th></th></tr>
+      <tr><th>User</th><th>Role</th><th>Required template</th><th>Tokens</th><th>Active</th>{% if show_password_col %}<th>Password</th>{% endif %}<th></th></tr>
     </thead>
     <tbody>
       {% for u in users %}
@@ -33,9 +35,11 @@
         </td>
         <td>{{ u.tokens }}</td>
         <td>{% if u.is_active %}<span class="pill on">yes</span>{% else %}<span class="pill">no</span>{% endif %}</td>
-        <td>{% if u.has_password %}<span class="pill on">set</span>{% else %}<span class="pill">none</span>{% endif %}</td>
+        {% if show_password_col %}
+        <td>{% if u.is_admin and u.has_password %}<span class="pill on">set</span>{% elif u.is_admin %}<span class="pill">none</span>{% endif %}</td>
+        {% endif %}
         <td style="white-space:nowrap;">
-          <button class="btn ghost sm" onclick="openPassword('{{ u.username }}')">Set password</button>
+          {% if u.is_admin %}<button class="btn ghost sm" onclick="openPassword('{{ u.username }}')">Set password</button>{% endif %}
           <button class="btn ghost sm" onclick="issueToken('{{ u.username }}')">Issue token</button>
         </td>
       </tr>
@@ -54,8 +58,14 @@
     <select id="u_role">
       {% for r in roles %}<option value="{{ r.name }}" {% if r.name == 'std_user' %}selected{% endif %}>{{ r.name }}</option>{% endfor %}
     </select>
+    <!-- Dashboard password: commented out — std users are created without a
+         password. The field is re-injected by JS below only when the selected
+         role is 'admin' (see syncPasswordField). Uncomment to restore it for
+         all roles.
     <label>Dashboard password (optional)</label>
     <input id="u_password" type="password" placeholder="min 8 characters — leave blank for no dashboard login" />
+    -->
+    <div id="u_password_slot"></div>
     <div class="row" style="justify-content:flex-end; margin-top:20px;">
       <button class="btn ghost" onclick="closeUser()">Cancel</button>
       <button class="btn" onclick="createUser()">Create</button>
@@ -114,11 +124,30 @@
   function closeUser() { um.classList.remove('show'); }
   um.addEventListener('click', (e) => { if (e.target === um) closeUser(); });
 
+  // Password field: present only when creating an admin user. std users are
+  // created without a password (the dashboard 'Set password' action can add
+  // one later).
+  const roleSel = document.getElementById('u_role');
+  const pwSlot = document.getElementById('u_password_slot');
+  function syncPasswordField() {
+    if (roleSel.value === 'admin') {
+      pwSlot.innerHTML =
+        '<label>Dashboard password (optional)</label>' +
+        '<input id="u_password" type="password" placeholder="min 8 characters — leave blank for no dashboard login" />';
+    } else {
+      pwSlot.innerHTML = '';
+    }
+  }
+  roleSel.addEventListener('change', syncPasswordField);
+  syncPasswordField();
+
   async function createUser() {
     const username = document.getElementById('u_name').value.trim();
     const role = document.getElementById('u_role').value;
     const email = document.getElementById('u_email').value.trim();
-    const password = document.getElementById('u_password').value;
+    // Password is only collected for admin-role creation (std users are
+    // created passwordless — the field does not exist in the DOM for them).
+    const password = role === 'admin' ? document.getElementById('u_password').value : '';
     if (!username) { toast('Username required', 'error'); return; }
     try {
       await api('/api/users', { username, role, email, password });

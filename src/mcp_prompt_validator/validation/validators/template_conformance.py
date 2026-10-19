@@ -7,14 +7,32 @@ call. Only meaningful when the caller passes a `template_name` (via
 `validate_prompt`'s `template_name` argument, threaded through as
 `ctx["template_name"]`); otherwise this is a no-op pass, so it's safe to
 always include in the default pipeline.
+
+Matching is whitespace-insensitive: runs of whitespace in both the template
+segment and the prompt collapse to a single space before comparison. Authors
+paste prompts out of ticket trackers and markdown editors that freely add or
+drop blank lines, and a template like "## Steps\n1. {{ step }}" would otherwise
+reject an identically-structured prompt purely for having a blank line after the
+heading. Whitespace carries no structural meaning here, so enforcing it only
+produced false blocks.
 """
 
 from __future__ import annotations
+
+import re
 
 from ...prompts import service as prompt_service
 from ...prompts.render import literal_segments
 from ..base import Validator, register
 from ..contracts import Finding, Severity
+
+_WHITESPACE = re.compile(r"\s+")
+
+
+def _normalize(text: str) -> str:
+    """Collapse whitespace runs to a single space so layout differences (blank
+    lines, hard line breaks, indentation) do not affect the match."""
+    return _WHITESPACE.sub(" ", text).strip()
 
 
 @register
@@ -35,15 +53,20 @@ class TemplateConformanceValidator(Validator):
                 metadata={"template": template_name},
             )
 
-        segments = literal_segments(template["body"])
+        haystack = _normalize(prompt)
         missing: list[str] = []
         pos = 0
-        for seg in segments:
-            idx = prompt.find(seg, pos)
+        for seg in literal_segments(template["body"]):
+            needle = _normalize(seg)
+            if not needle:
+                continue
+            idx = haystack.find(needle, pos)
             if idx == -1:
+                # Reported verbatim from the template, not normalized, so the
+                # caller sees the field exactly as the template declares it.
                 missing.append(seg)
             else:
-                pos = idx + len(seg)
+                pos = idx + len(needle)
 
         if missing:
             return self._fail(

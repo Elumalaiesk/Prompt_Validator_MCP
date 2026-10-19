@@ -120,14 +120,21 @@ async def create(
 
 
 async def set_global(template_id: int, value: bool) -> dict:
-    return await _update(template_id, is_global=value)
+    return await update(template_id, is_global=value)
 
 
 async def set_enabled(template_id: int, value: bool) -> dict:
-    return await _update(template_id, enabled=value)
+    return await update(template_id, enabled=value)
 
 
-async def _update(template_id: int, **fields) -> dict:
+async def update(template_id: int, **fields) -> dict:
+    """Patch the given columns on one template.
+
+    `name` is deliberately not editable through the dashboard: users reference a
+    template by name (`users.required_template` stores the name, not an FK — see
+    `db/models.py`), so a rename would silently orphan every user pinned to it
+    and block their every prompt. Callers pass description/body only.
+    """
     async with session_scope() as session:
         t = await session.get(PromptTemplate, template_id)
         if t is None:

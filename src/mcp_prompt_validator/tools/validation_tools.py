@@ -68,9 +68,11 @@ def register_validation_tools(mcp: Any, runner: ValidationRunner) -> None:
 
         On success returns `{passed: true, status: "validation passed"}`.
         On failure returns `{passed: false, status: "validation failed"}` plus a
-        `failed` list naming each failed category with the reasons and a concrete
-        `suggestion` for fixing the prompt. Fix the highest-severity entry first
-        (the list is ordered worst-first) and re-validate.
+        `failed` list naming each failed category (ordered worst-first) with the
+        reasons, a top-level `suggestion` for fixing the prompt, and — when the
+        attached template is not met — the missing template fields on the
+        `template_conformance` entry. Fix the highest-severity entry first and
+        re-validate.
 
         `categories` is ignored unless the server permits partial validation.
         `template_name` requires the prompt to derive from one of your (or a
